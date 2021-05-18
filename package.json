@@ -1,0 +1,23 @@
+{
+  "name": "web-scraper",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/395mallard/web-scraper.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/395mallard/web-scraper/issues"
+  },
+  "homepage": "https://github.com/395mallard/web-scraper#readme",
+  "dependencies": {
+    "diskdb": "^0.1.17",
+    "puppeteer": "^9.1.1"
+  }
+}
