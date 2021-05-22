@@ -28,30 +28,15 @@ class FsLayer {
 }
 
 class SiteScraper {
-    _configHandler = {};
-
-    _getter(name, preferStale=true) {
-        let staleValue = this._staleConfig[name];
-        if (preferStale && staleValue)
-            return staleValue;
-
-        const newValue = this._configHandler[stale].apply();
-        if (typeof newValue !== "undefined") {
-            return newValue;
-        }
-    }
-
-    _getMetaFile() {
-        return `./${this.siteConfig.siteId}.json`;
-    }
-
     constructor(page, siteConfig) {
         this.page = page;
         this.siteConfig = siteConfig;
 
         this.fragmentFs = new FsLayer(`_${siteConfig.siteId}_fragment`);
 
-        // this.metaData = JSON.parse(fs.readFileSync(this._getMetaFile()));
+        this.db = diskdb.connect(`./db/${siteConfig.siteId}`);
+        this.db.loadCollections(Object.keys(siteConfig.entities));
+
     }
 
     async scrape(type, ...parameters) {
@@ -67,7 +52,7 @@ class SiteScraper {
             if (entity.parseRules) {
                 for (const k in entity.parseRules) {
                     const [selector, ...processors] = entity.parseRules[k];
-                    const nodeList = document.querySelectorAll(selector);
+                    const nodeList = Array.from(document.querySelectorAll(selector));
                     let value = nodeList;
                     processors.forEach((processor) => {
                         if (!value) return;
@@ -76,28 +61,46 @@ class SiteScraper {
                                 value = value[0];
                                 break;
                             case 'text':
-                                value = value.innerText;
+                                value = value.map(v => v.innerText);
                                 break;
                             case "trim":
-                                value = value.trim();
+                                value = value.map(v => v.trim());
+                                break;
+                            case "ahref":
+                                value = value.map(v => [
+                                    v.innerText.trim(), v.href
+                                ]);
                                 break;
                         }
                     });
                     ret[k] = value;
                 }
             }
-
-            if (entity.customParse) {
-                entity.customParse(ret);
-            }
             return ret;
         }, entity);
-        console.log(ret);
+
+        if (entity.postParse) {
+            entity.postParse.call(this, ret, ...parameters);
+        }
+
+        this._dbUpsert(type, ret.id, ret);
         return ret;
     }
 
-    destructor() {
-        fs.writeFileSync(dataFile, JSON.stringify(this._getMetaFile()));
+    _dbUpsert(type, id, data) {
+        const query = {
+            id
+        }
+        this.db[type].update(query, data, {
+            multi: false,
+            upsert: true
+        });
+    }
+
+    _dbRead(type, id) {
+        return this.db[type].findOne({
+            id
+        })
     }
 }
 
@@ -110,13 +113,24 @@ const dcrConfig = (() => {
                 url: (baseUrl, id) => {
                     return `${baseUrl}/book/${id}/`
                 },
-                customParse: (ret) => {
+
+                postParse: (info, bookId) => {
+                    info.id = bookId;
+                    // normalize chapter name
+                    const f = info.fragments;
+                    for (let i=0; i<f.length; i++) {
+                        const [text, href] = f[i];
+                        //if (i == 0 && text.length > 5)
+                        f[i][0] = `${i}_1`;
+                    }
                 },
 
                 parseRules: {
-                    "title": [".media-body > h1.book-name > a", "single", "text"],
-                    "description": [".row .book-detail", "single", "text", "trim"],
-
+                    "title": [".media-body > h1.book-name > a", "text", 'single'],
+                    "description": [".row .book-detail", "text", "trim", 'single'],
+                    "author": [".book-info .book-name ~ .row .col-md-4:nth-child(1)", "text", "trim", "single"],
+                    "genre": [".book-info .book-name ~ .row .col-md-4:nth-child(3)", "text", "trim", "single"],
+                    "fragments": ["#all-chapter .panel-body .item > a", "ahref"],
                 },
             }
         },
@@ -145,10 +159,8 @@ const main = async () => {
     const bookId = "tuilijingjichang";
     const bookInfo = await scraper.scrape("book", bookId);
 
+    console.log("BOOKINFO", bookInfo);
 
-
-    // const db = diskdb.connect("./db");
-    // db.loadCollections(['dcr20']);
 
     // c.upsert(bookId, c);
     
