@@ -1,4 +1,8 @@
+const diskdb = require("diskdb");
 
+/**
+ * puppeteer goto wrapper to throttle calls to remote site
+ */
 class DownloadQueue {
     constructor(page) {
         this.page = page;
@@ -7,13 +11,17 @@ class DownloadQueue {
         this.db = diskdb.connect("./db/common");
         this.db.loadCollections(["blacklistUrl"]);
     }
+
+    /**
+     * if the most recent uncached fetch took place less than xx sec ago, add a delay
+     */
     async goto(url) {
         if (this.db.blacklistUrl.findOne({ url }))
             return undefined;
 
         if (this.lastFetchTs && this.lastFetchTs + 5000 > Date.now()) {
             await new Promise(resolve => {
-                setTimeout(resolve, 8000);
+                setTimeout(resolve, 6000);
             });
         }
         const res = await this.page.goto(url);
@@ -24,6 +32,10 @@ class DownloadQueue {
 
         return res;
     }
+
+    /**
+     * mark a url to not download again
+     */
     blacklistUrl(url) {
         if (!this.db.blacklistUrl.findOne({ url }))
             this.db.blacklistUrl.save({ url });

@@ -1,4 +1,6 @@
-const fs = require("fs");
+const diskdb = require("diskdb");
+const FsLayer = require("./fs");
+const DownloadQueue = require("./downloadQueue");
 
 class SiteScraper {
     constructor(page, siteConfig) {
@@ -8,8 +10,47 @@ class SiteScraper {
         this.fsHelper = new FsLayer(`_${siteConfig.siteId}_fragment`);
 
         this.db = diskdb.connect(`./db/${siteConfig.siteId}`);
-        this.db.loadCollections(Object.keys(siteConfig.entities));
+        this.db.loadCollections([...(Object.keys(siteConfig.entities)), "_url"]);
         this.downloadQueue = new DownloadQueue(page);
+    }
+
+    generateFileAggregation(dir, aggregator, sorter) {
+        const filePath = this.fsHelper.ls(dir);
+        const groups = {};
+        filePath.forEach((fileName) => {
+            const chapterName = aggregator.call(null, fileName);
+            if (!groups[chapterName])
+                groups[chapterName] = [];
+            groups[chapterName].push(fileName);
+        })
+
+
+        for (let chapterName in groups) {
+            groups[chapterName].sort(sorter);
+            groups[chapterName] = groups[chapterName].map(v => `${dir}/${v}`);
+        }
+        return groups;
+    }
+
+    combineFile(fileList, outputDir, outFile, converter) {
+        const content = [];
+        fileList.forEach((fileItem) => {
+            let filePath = fileItem;
+            if (typeof fileItem !== "string") {
+                filePath = fileItem[0];
+                const fileName = fileItem[1];
+                if (fileName) {
+                    content.push(`${fileName}`);
+                }
+            }
+            let fileContent = this.fsHelper.readFile(filePath);
+            if (converter)
+                fileContent = converter.call(null, fileContent);
+
+            content.push(fileContent);
+        })
+        this.fsHelper.writeContent(outputDir, outFile, content.join("\n"));
+        return `${outputDir}/${outFile}`;
     }
 
     async scrape(type, ...parameters) {
@@ -60,6 +101,42 @@ class SiteScraper {
 
         this._dbUpsert(type, ret.id, ret);
         return ret;
+    }
+
+    async run(command, ...parameters) {
+        if (!this.siteConfig.runs[command])
+            throw new Error(`${command} not valid`);
+        await this.siteConfig.runs[command].call(null, this, ...parameters);
+    }
+
+    log(message) {
+        console.log(message);
+    }
+
+    async selectElsOnUrl(url, selector, attrs) {
+        const res = await this.downloadQueue.goto(url);
+        if (!res)
+            return [];
+
+        return await this.page.evaluate((selector, attrs) => {
+            const nodeList = Array.from(document.querySelectorAll(selector));
+            return nodeList.map((node) => {
+                const ret = {};
+                attrs.forEach((attr) => {
+                    ret[attr] = node[attr];
+                });
+                return ret;
+            });
+        }, selector, attrs);
+    }
+
+    addItemUrls(urls) {
+        urls.forEach((url) => {
+            this._dbUpsert("_url", url, {
+                id: url,
+                type: 'item',
+            });
+        })
     }
 
     _dbUpsert(type, id, data) {

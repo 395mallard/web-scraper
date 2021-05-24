@@ -1,10 +1,8 @@
 const puppeteer = require("puppeteer");
-const diskdb = require("diskdb");
-const FsLayer = require("./fs");
-const DownloadQueue = require("./downloadQueue");
 const SiteScraper = require("./siteScraper");
 const dcr20Config = require("./siteConfig/dcr20");
 
+// set up for puppetter to emulate real browser
 const createPuppeteerPage = async () => {
     const args = [
         '--no-sandbox',
@@ -21,22 +19,34 @@ const createPuppeteerPage = async () => {
         ignoreHTTPSErrors: true,
         headless: true,
     });
-    return await browser.newPage();
+    return [await browser.newPage(), browser];
 }
 
 const main = async () => {
-    const newPage = await createPuppeteerPage();
+    const [newPage, browser] = await createPuppeteerPage();
     const scraper = new SiteScraper(newPage, dcr20Config);
 
-    const bookId = "tuilijingjichang";
-    const bookInfo = await scraper.scrape("book", bookId);
+    //// to execute various `run` command
+    /**
+     * e.g.
+     * addBooks: to scrape listing page
+     * scrapeBook (w/ bookId): to download book info and storing content fragment
+     * buildBook (w/ bookid): to build varoius usable format
+     */
+    await scraper.run("addBooks", (() => {
+        const ret = [];
+        for (let i=1; i<=47; i++)
+            ret.push(`https://www.20dcr.com/xuanyi${i}.html`);
+        return ret;
+    })());
+/*
+    const bookId = "shouwuzuosuizhiwu";
+    await scraper.run("scrapeBook", bookId);
+    await scraper.run("buildBook", bookId);
+*/
 
-    console.log("BOOKINFO", bookInfo);
-    
-    for (let i=0; i<bookInfo.fragments.length; i++) {
-        const f = bookInfo.fragments[i];
-        await scraper.scrape("fragment", bookId, ...f);
-    };
-
+    ///// DON'T EDIT BELOW
     await browser.close();
 }
+
+main();
