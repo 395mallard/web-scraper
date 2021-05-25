@@ -6,12 +6,11 @@ const fs = require("fs");
  */
 class FsLayer {
     /**
-     * @param siteName e.g. `dcr20`
      */
-    constructor(siteName) {
-        this.siteName = siteName;
-        if (!fs.existsSync(this.siteName))
-            fs.mkdirSync(this.siteName);
+    constructor(siteDir) {
+        this.siteDir = siteDir;
+        if (!fs.existsSync(this.siteDir))
+            fs.mkdirSync(this.siteDir, { recursive: true });
     }
 
     /// ALL operations use file path relative to site dir e.g. `./dcr20`
@@ -21,7 +20,7 @@ class FsLayer {
      * prefixed with `.` nor `_`
      */
     ls(path) {
-        const dirPath = `${this.dirName}/${path}`;
+        const dirPath = `${this.siteDir}/${path}`;
         return fs.readdirSync(dirPath).filter(name => !name.match(/^\_/));
     }
 
@@ -29,14 +28,14 @@ class FsLayer {
      * return the text content of a filePath
      */
     readFile(filePath) {
-        return fs.readFileSync(`${this.dirName}/${filePath}`, { encoding: 'utf8' });
+        return fs.readFileSync(`${this.siteDir}/${filePath}`, { encoding: 'utf8' });
     }
 
     /**
      * write string content to file path
      */
     writeContent(subDir, fileName, content) {
-        const dirPath = `${this.dirName}/${subDir}`;
+        const dirPath = `${this.siteDir}/${subDir}`;
         if (!fs.existsSync(dirPath))
             fs.mkdirSync(dirPath, { recursive: true });
 

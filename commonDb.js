@@ -2,11 +2,8 @@ const diskdb = require("diskdb");
 
 class CommonDb {
     constructor() {
-        this.page = page;
-        this.lastFetchTs = undefined;
-
         this.db = diskdb.connect("./db/common");
-        this.db.loadCollections(["book", "blacklistUrl"]);
+        this.db.loadCollections(["blacklistUrl"]);
     }
 
     /**

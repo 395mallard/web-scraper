@@ -52,14 +52,23 @@ module.exports = (() => {
              * - convert the one html file to mobi
              */
             buildFile: async (scraper, bookId) => {
-                const bookInfo = scraper._dbRead('book', bookId);
-                const aggregation = scraper.generateFileAggregation(bookId,
+                const bookInfo = scraper._dbSelect('book', bookId);
+                if (!bookInfo.id)
+                    throw new Error(`${bookId} is not a valid item`);
+
+                // 
+                const aggregation = scraper.generateFileAggregation(
+                    bookInfo.fragments,
                     // if two files generate the same chapter one, they will combine
-                    (fileName) => {
-                        let [ch] = fileName.split("_");
+                    (fragment) => {
+                        let [ch] = fragment.id.split("_");
                         if (ch.length === 1)
                             ch = `0${ch}`;
-                        return `Chapter ${ch}`;
+                        return `ch${ch}`
+                        return {
+                            chapterName: fragment.name,
+                            fileName: `ch${ch}`
+                        }
                     }
                 );
 
@@ -115,11 +124,12 @@ module.exports = (() => {
                  * Cannot return nodeList due to Puppeteer page.evaluate() restriction
                  */
                 parseRules: {
-                    "title": [".media-body > h1.book-name > a", "text", 'single'],
-                    "description": [".row .book-detail", "text", "trim", 'single'],
-                    "author": [".book-info .book-name ~ .row .col-md-4:nth-child(1)", "text", "trim", "single"],
-                    "genre": [".book-info .book-name ~ .row .col-md-4:nth-child(3)", "text", "trim", "single"],
-                    "fragments": ["#all-chapter .panel-body .item > a", "ahref"],
+                    "title": [".media-body > h1.book-name > a", "op:text", 'single'],
+                    "coverImg": ["img.book-img-middel", "el:img", 'single'],
+                    "description": [".row .book-detail", "op:text", "op:trim", 'single'],
+                    "author": [".book-info .book-name ~ .row .col-md-4:nth-child(1)", "op:text", "op:trim", "single"],
+                    "genre": [".book-info .book-name ~ .row .col-md-4:nth-child(3)", "op:text", "op:trim", "single"],
+                    "fragments": ["#all-chapter .panel-body .item > a", "el:a"],
                 },
 
                 /**
@@ -142,22 +152,22 @@ module.exports = (() => {
                     const revisedF = [];
                     const f = info.fragments;
                     for (let i=1; i<=f.length; i++) {
-                        let [text, href] = f[i];
+                        const fragment = f[i-1];
 
-                        if (i == 1 && text.length > 5)
-                            text = '1';
+                        // if (i == 1 && fragment.text.length > 5)
+                        //     fragment.text = '1';
 
                         revisedF.push({
                             id: `${i}_1`,
-                            name: `${text}`,
-                            url: href
+                            name: `${fragment.text}`,
+                            url: fragment.href
                         });
 
                         for (let j=2; j<=8; j++) {
                             revisedF.push({
                                 id: `${i}_${j}`,
-                                name: `${text}`,
-                                url: href.replace(/\.html$/, `_${j}.html`)
+                                name: `${fragment.text}`,
+                                url: fragment.href.replace(/\.html$/, `_${j}.html`)
                             });
                         }
                     }
@@ -166,7 +176,7 @@ module.exports = (() => {
             },
 
             fragment: {
-                url: (baseUrl, bookId, name, url) => url,
+                url: (baseUrl, bookId, fragmentItem) => fragmentItem.url,
                 isValidPage: (page, res) => {
                     return res.status() != "404";
                 },
@@ -182,14 +192,12 @@ module.exports = (() => {
                     scraper.saveFragmentContentToFs(bookId, fragmentItem.id, rawContent);
 
                     delete info.rawContent;
-                    info = {
-                        ...info,
-                        ...fragmentItem,
-                        bookId, 
-                    }
+                    for (let k in fragmentItem)
+                        info[k] = fragmentItem[k];
+                    info.bookId = bookId;
                 },
                 parseRules: {
-                    "rawContent": ["#cont-text", "text", "single"]
+                    "rawContent": ["#cont-text", "op:text", "single"]
                 }
             }
         },

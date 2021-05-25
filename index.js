@@ -33,17 +33,17 @@ const main = async () => {
      * scrapeBook (w/ bookId): to download book info and storing content fragment
      * buildBook (w/ bookid): to build varoius usable format
      */
-    await scraper.run("addBooks", (() => {
-        const ret = [];
-        for (let i=1; i<=47; i++)
-            ret.push(`https://www.20dcr.com/xuanyi${i}.html`);
-        return ret;
-    })());
-/*
+    // await scraper.run("addBooks", (() => {
+    //     const ret = [];
+    //     for (let i=1; i<=3; i++)
+    //         ret.push(`https://www.20dcr.com/xuanyi${i}.html`);
+    //     return ret;
+    // })());
+
     const bookId = "shouwuzuosuizhiwu";
     await scraper.run("scrapeBook", bookId);
-    await scraper.run("buildBook", bookId);
-*/
+//    await scraper.run("buildBook", bookId);
+
 
     ///// DON'T EDIT BELOW
     await browser.close();

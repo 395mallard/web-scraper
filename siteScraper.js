@@ -12,11 +12,11 @@ class SiteScraper {
         this.siteConfig = siteConfig;
 
         // file system abstraction
-        this.fsHelper = new FsLayer(`_${siteConfig.siteId}_fragment`);
+        this.fsHelper = new FsLayer(`_stash/${siteConfig.siteId}`);
 
         // each site owns a different set of tables
         this.db = diskdb.connect(`./db/${siteConfig.siteId}`);
-        this.db.loadCollections([...(Object.keys(siteConfig.entities))]);
+        this.db.loadCollections([...(Object.keys(siteConfig.entities)), "_url"]);
 
         // a separate db handle to track common stuff
         this.commonDb = new CommonDb();
@@ -77,8 +77,11 @@ class SiteScraper {
         return `${outputDir}/${outFile}`;
     }
 
+    /**
+     * 
+     */
     saveFragmentContentToFs(itemId, fragmentId, content) {
-        const dirPath = `${itemid}/_fragment`;
+        const dirPath = `${itemId}/_fragment`;
         this.fsHelper.writeContent(dirPath, fragmentId, content);
     }
 
@@ -98,7 +101,7 @@ class SiteScraper {
         // if this page is encountering error, either by network or custom definition 
         // per isValidPage()
         if (!res || entity.isValidPage && !entity.isValidPage.call(this, this.page, res)) {
-            this.downloadQueue.blacklistUrl(itemUrl);
+            this.commonDb.blacklistUrl(itemUrl);
             return undefined;
         }
 
@@ -121,19 +124,32 @@ class SiteScraper {
                             case 'single':
                                 value = value[0];
                                 break;
+
                             // return node text
-                            case 'text':
+                            case 'op:text':
                                 value = value.map(v => v.innerText);
                                 break;
-                            case "trim":
+
+                            case "op:trim":
                                 value = value.map(v => v.trim());
                                 break;
 
                             // extract vital info from anchor link element
-                            case "ahref":
+                            case "el:a":
                                 value = value.map(v => {
-                                    text: v.innerText.trim(),
-                                    href: v.href
+                                    return {
+                                        text: v.innerText.trim(),
+                                        href: v.href
+                                    }
+                                });
+                                break;
+
+                            case "el:img":
+                                value = value.map(v => {
+                                    return {
+                                        src: v.src,
+                                        title: v.title,
+                                    }
                                 });
                                 break;
                         }
@@ -145,7 +161,7 @@ class SiteScraper {
         }, entity);
 
         if (entity.postParse) {
-            entity.postParse.call(this, ret, ...parameters, this.fsHelper);
+            entity.postParse.call(this, this, ret, ...parameters);
         }
 
         this._dbUpsert(type, ret.id, ret);
@@ -205,6 +221,11 @@ class SiteScraper {
             multi: false,
             upsert: true
         });
+    }
+
+    // private helper method to single select one instance of an entity 
+    _dbSelect(type, query) {
+        this.db[type].findOne(query);
     }
 }
 
