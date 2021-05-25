@@ -25,7 +25,7 @@ module.exports = (() => {
                     // to return all anchor and return their href attributes
                     const hrefEls = await scraper.selectElsOnUrl(url, "a", ["href"]);
 
-                    scraper.addItemUrls(hrefEls
+                    scraper.addItemUrlsToScrape(hrefEls
                         .map(el => el.href)
                         .filter(href => href.match(/\/book\/(\w+)\//)));
                 };
@@ -40,8 +40,7 @@ module.exports = (() => {
                 scraper.log(`scraping: ${bookInfo['title']}`);
                 
                 for (let i=0; i<bookInfo.fragments.length; i++) {
-                    const f = bookInfo.fragments[i];
-                    await scraper.scrape("fragment", bookId, ...f);
+                    await scraper.scrape("fragment", bookId, bookInfo.fragments[i]);
                 }
             },
 
@@ -126,27 +125,40 @@ module.exports = (() => {
                 /**
                  * After the parsing as specified by `parseRules`,
                  * allow additional enhancement/revision
+                 * 
+                 * Mainly to clean up and reformat what was scrape, especially
+                 * the fragmentList, [
+                 *  { id: '1_1', name: 'xxxxxx', url: 'yyyy' }
+                 * ]
                  */
-                postParse: (info, bookId) => {
+                postParse: (scraper, info, bookId) => {
                     info.id = bookId;
 
                     /**
                      * fix 2 things with the fragment list
-                     * 1. the 1st fragment 
+                     * 1. the 1st fragment name rename
+                     * 2. for each chapter, divide into up to 8 child pages
                      */
                     const revisedF = [];
                     const f = info.fragments;
-                    for (let i=0; i<f.length; i++) {
+                    for (let i=1; i<=f.length; i++) {
                         let [text, href] = f[i];
-                        if (i == 0 && text.length > 5)
+
+                        if (i == 1 && text.length > 5)
                             text = '1';
-                        revisedF.push([`${text}_1`, href]);
+
+                        revisedF.push({
+                            id: `${i}_1`,
+                            name: `${text}`,
+                            url: href
+                        });
 
                         for (let j=2; j<=8; j++) {
-                            revisedF.push([
-                                `${text}_${j}`,
-                                href.replace(/\.html$/, `_${j}.html`)
-                            ]);
+                            revisedF.push({
+                                id: `${i}_${j}`,
+                                name: `${text}`,
+                                url: href.replace(/\.html$/, `_${j}.html`)
+                            });
                         }
                     }
                     info.fragments = revisedF;
@@ -158,14 +170,23 @@ module.exports = (() => {
                 isValidPage: (page, res) => {
                     return res.status() != "404";
                 },
-                postParse: (info, bookId, fname, furl, fsLayer) => {
+                /**
+                 * 1. format rawcontent
+                 * 2. save it to fs
+                 * 3. delete rawContent from info because we don't want to save it to db
+                 */
+                postParse: (scraper, info, bookId, fragmentItem) => {
                     if (!info.rawContent) return;
                     let rawContent = info.rawContent.replace("\n\n", "\n");
-                    fsLayer.writeContent(bookId, fname, rawContent);
+
+                    scraper.saveFragmentContentToFs(bookId, fragmentItem.id, rawContent);
+
                     delete info.rawContent;
-                    info.bookId = bookId;
-                    info.name = fname;
-                    info.url = furl;
+                    info = {
+                        ...info,
+                        ...fragmentItem,
+                        bookId, 
+                    }
                 },
                 parseRules: {
                     "rawContent": ["#cont-text", "text", "single"]

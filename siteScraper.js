@@ -1,17 +1,41 @@
 const diskdb = require("diskdb");
 const FsLayer = require("./fs");
 const DownloadQueue = require("./downloadQueue");
+const CommonDb = require("./commonDb");
 
+/**
+ * site scraping framework facade
+ */
 class SiteScraper {
     constructor(page, siteConfig) {
         this.page = page;
         this.siteConfig = siteConfig;
 
+        // file system abstraction
         this.fsHelper = new FsLayer(`_${siteConfig.siteId}_fragment`);
 
+        // each site owns a different set of tables
         this.db = diskdb.connect(`./db/${siteConfig.siteId}`);
-        this.db.loadCollections([...(Object.keys(siteConfig.entities)), "_url"]);
-        this.downloadQueue = new DownloadQueue(page);
+        this.db.loadCollections([...(Object.keys(siteConfig.entities))]);
+
+        // a separate db handle to track common stuff
+        this.commonDb = new CommonDb();
+
+        // download queue, network interceptor
+        this.downloadQueue = new DownloadQueue(page, this.commonDb);
+    }
+
+    /**
+     * public interface for command runner
+     * e.g. scraper.run('doThing', param1, param2)
+     * execute the matching callback in siteConfig.runs.doThing
+     *  */
+    async run(command, ...parameters) {
+        if (!this.siteConfig.runs[command])
+            throw new Error(`${command} not valid`);
+
+        // passing scraper as the first parameter to callback
+        await this.siteConfig.runs[command].call(null, this, ...parameters);
     }
 
     generateFileAggregation(dir, aggregator, sorter) {
@@ -53,16 +77,36 @@ class SiteScraper {
         return `${outputDir}/${outFile}`;
     }
 
+    saveFragmentContentToFs(itemId, fragmentId, content) {
+        const dirPath = `${itemid}/_fragment`;
+        this.fsHelper.writeContent(dirPath, fragmentId, content);
+    }
+
+    /**
+     * scrape defined `entity` per siteConfig
+     * e.g. scraper.scrape('book', 13453)
+     * return a map of scraped data
+     */
     async scrape(type, ...parameters) {
         const entity = this.siteConfig.entities[type];
         if (!entity) throw `${type} is not a valid entity`;
+
+        // find out the matching url for this entity to scrape
         const itemUrl = entity.url.call(null, this.siteConfig.baseUrl, ...parameters);
 
         const res = await this.downloadQueue.goto(itemUrl);
+        // if this page is encountering error, either by network or custom definition 
+        // per isValidPage()
         if (!res || entity.isValidPage && !entity.isValidPage.call(this, this.page, res)) {
             this.downloadQueue.blacklistUrl(itemUrl);
             return undefined;
         }
+
+        /**
+         * run dom querying on this page; we need to return primitive data
+         * (no function, no node) so each parseRule has a set of processor to 
+         * transform the selected nodeList into primitve data
+         */
         const ret = await this.page.evaluate((entity) => {
             var ret = {};
             if (entity.parseRules) {
@@ -73,19 +117,24 @@ class SiteScraper {
                     processors.forEach((processor) => {
                         if (!value) return;
                         switch (processor) {
+                            // needs to be the last procssor to run
                             case 'single':
                                 value = value[0];
                                 break;
+                            // return node text
                             case 'text':
                                 value = value.map(v => v.innerText);
                                 break;
                             case "trim":
                                 value = value.map(v => v.trim());
                                 break;
+
+                            // extract vital info from anchor link element
                             case "ahref":
-                                value = value.map(v => [
-                                    v.innerText.trim(), v.href
-                                ]);
+                                value = value.map(v => {
+                                    text: v.innerText.trim(),
+                                    href: v.href
+                                });
                                 break;
                         }
                     });
@@ -103,16 +152,18 @@ class SiteScraper {
         return ret;
     }
 
-    async run(command, ...parameters) {
-        if (!this.siteConfig.runs[command])
-            throw new Error(`${command} not valid`);
-        await this.siteConfig.runs[command].call(null, this, ...parameters);
-    }
-
+    /**
+     * helper method to log
+     */
     log(message) {
         console.log(message);
     }
 
+    /**
+     * shortcut method to dom selection on a url
+     * selector: "#header > a"
+     * attrs: ["href", "innerText"]
+     */
     async selectElsOnUrl(url, selector, attrs) {
         const res = await this.downloadQueue.goto(url);
         if (!res)
@@ -130,15 +181,22 @@ class SiteScraper {
         }, selector, attrs);
     }
 
-    addItemUrls(urls) {
+    /**
+     * add potential item urls for scraping
+     */
+    addItemUrlsToScrape(urls) {
         urls.forEach((url) => {
-            this._dbUpsert("_url", url, {
-                id: url,
-                type: 'item',
-            });
+            if (!this.db._url.findOne({ id: url }))
+                this._dbUpsert("_url", url, {
+                    id: url,
+                    type: 'item',
+                    status: "new"
+                });
         })
     }
 
+    // private helper method to upsert one instance of an entity to db
+    // e.g. _dbUpsert('fragment', '1_3', { ... })
     _dbUpsert(type, id, data) {
         const query = {
             id
@@ -147,12 +205,6 @@ class SiteScraper {
             multi: false,
             upsert: true
         });
-    }
-
-    _dbRead(type, id) {
-        return this.db[type].findOne({
-            id
-        })
     }
 }
 
