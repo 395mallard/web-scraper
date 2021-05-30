@@ -1,6 +1,11 @@
-const puppeteer = require("puppeteer");
+const randomUseragent = require('random-useragent');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth')
+const puppeteer = require("puppeteer-extra");
+puppeteer.use(StealthPlugin());
+
 const SiteScraper = require("./siteScraper");
 const dcr20Config = require("./siteConfig/dcr20");
+const uukanccConfig = require("./siteConfig/uukancc")
 
 // set up for puppetter to emulate real browser
 const createPuppeteerPage = async () => {
@@ -22,10 +27,22 @@ const createPuppeteerPage = async () => {
     return [await browser.newPage(), browser];
 }
 
+const scraperPool = {};
+const run = () => {
+
+}
+
 const main = async () => {
     const [newPage, browser] = await createPuppeteerPage();
-    const scraper = new SiteScraper(newPage, dcr20Config);
+    await newPage.setUserAgent(randomUseragent.getRandom());
+    await newPage.setJavaScriptEnabled(true);
+//    await newPage.setDefaultNavigationTimeout(0);
+    const commandList = [
+//        [dcr20Config, "scrapeBook", xxx]
+    ];
 
+    //const scraper = new SiteScraper(newPage, dcr20Config);
+    const scraper = new SiteScraper(newPage, uukanccConfig);
     //// to execute various `run` command
     /**
      * e.g.
@@ -35,14 +52,20 @@ const main = async () => {
      */
     // await scraper.run("addBooks", (() => {
     //     const ret = [];
-    //     for (let i=1; i<=3; i++)
+    //     for (let i=1; i<=78; i++)
     //         ret.push(`https://www.20dcr.com/xuanyi${i}.html`);
     //     return ret;
     // })());
 
-    const bookId = "shouwuzuosuizhiwu";
+    const unKanooks = [15038, 428, 9983, 10245, 16255, 2319, 5993, 11795, 13517, 15338, 11237];
+
+    unKanooks.forEach(async (bookId) => {
+        await scraper.run("scrapeBook", bookId);
+    });
+//    await scraper.run("buildBook", 14440, 'html');
+//    const bookId = "shouwuzuosuizhiwu";
 //    await scraper.run("scrapeBook", bookId);
-    await scraper.run("buildBook", bookId, 'html');
+//    await scraper.run("buildBook", bookId, 'html');
 
 
     ///// DON'T EDIT BELOW

@@ -2,7 +2,7 @@ const diskdb = require("diskdb");
 const FsLayer = require("./fs");
 const DownloadQueue = require("./downloadQueue");
 const CommonDb = require("./commonDb");
-
+const chineseConv = require("chinese-conv");
 /**
  * site scraping framework facade
  */
@@ -107,9 +107,25 @@ class SiteScraper {
         return _plainttext;
     }
 
-    htmlize(plaintext, chapterInfo) {
+    addLeadingZero(id, l) {
+        let ch = ""+id;
+        for (let i=0; i<l-1; i++)
+            if (ch.length < l)
+                ch = `0${ch}`;
+        return ch;
+    }
+
+    htmlize(plaintext, chapterInfo, chapterList) {
+        const currentIndex = chapterList.findIndex(c =>
+            c.fileName == chapterInfo.fileName);
+        const numChapter = chapterList.length;
+
+        const isTocAnchor = (numChapter <= 30)
+            || (currentIndex % Math.floor(numChapter / 30) == 0);
+
+        const tocAnchor = isTocAnchor ? `class="chapter"` : '';
         let html = '';
-        html += `<h2 class="chapter">${chapterInfo.chapterName || chapterInfo.fileName}</h2>\n\n`;
+        html += `<h2 ${tocAnchor}>${chapterInfo.chapterName || chapterInfo.fileName}</h2>\n\n`;
         plaintext.split(/\n(\n)?/).forEach(str => {
             if (str && str.trim())
                 html += `<p>${str}</p>\n`;
@@ -118,8 +134,13 @@ class SiteScraper {
         return html;
     }
 
-    buildHtmlPage(htmlBody, chapterInfo) {
+    encodeSimplify(plaintext) {
+        return chineseConv.tify(plaintext)
+    }
+
+    buildHtmlPage(htmlBody, chapterInfo, _chapterList, config) {
         let tocHtml = ``;
+        config = config || {};
         const toc = chapterInfo.toc;
 
         if (toc) {
@@ -144,12 +165,12 @@ class SiteScraper {
 <head>
 <style>
 body {
-    padding: 10px 5px;
+    padding: 10px 15px;
     font-family: "PingFang SC Regular","PingFang SC",PingFang,"Droid Sans","Droid Sans Fallback",Arial,"Helvetica Neue",Roboto,"Heiti SC",sans-self;
     font-size: 20px;
     line-height: 40px;
     background-color: #365761;
-    color: #bbb;
+    color: #eee;
 }
 h2 {
     font-weight: 300;
@@ -190,6 +211,9 @@ document.addEventListener('keydown', function(e) {
             document.location.href = nextFileName;
         }
         break;
+    
+    case 13:
+        document.location.href = '.';
     }
 })
 </script>        
@@ -197,6 +221,8 @@ document.addEventListener('keydown', function(e) {
 <body>
 ${tocHtml}
 ${htmlBody}
+<br />
+${tocHtml}
 </body>
 </html>`;
     }
@@ -236,6 +262,9 @@ ${htmlBody}
         const itemUrl = entity.url.call(null, this.siteConfig.baseUrl, ...parameters);
 
         const res = await this.downloadQueue.goto(itemUrl);
+
+        console.log(res);
+        return;
         // if this page is encountering error, either by network or custom definition 
         // per isValidPage()
         if (!res || entity.isValidPage && !entity.isValidPage.call(this, this.page, res)) {
@@ -363,7 +392,7 @@ ${htmlBody}
 
     // private helper method to single select one instance of an entity 
     _dbSelect(type, query) {
-        if (typeof query === "string")
+        if (typeof query === "string" || typeof query === "number")
             query = {
                 id: query
             }
