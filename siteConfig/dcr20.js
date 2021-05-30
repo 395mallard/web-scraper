@@ -80,6 +80,16 @@ module.exports = (() => {
                             scraper.htmlize,
                             scraper.buildHtmlPage,
                         ],
+                        cleanup: (scraper, chapterList) => {
+                            const fullBook = chapterList
+                                .map(chapter => chapter.htmlContent)
+                                .join("\n\n");
+                            scraper.fsHelper.writeContent(
+                                `${bookInfo.id}/_mobi`,
+                                `${bookInfo.title}.html`,
+                                fullBook
+                            );
+                        }
                     });
                     break;
                 case 'txt':

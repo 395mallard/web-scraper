@@ -71,8 +71,6 @@ class SiteScraper {
             return a.fileName < b.fileName;
         }));
 
-//console.log(groups);
-
         groups.forEach(groupItem => {
             groupItem.fragments.sort(command.fragmentSorter);
 
@@ -86,6 +84,10 @@ class SiteScraper {
                 groupItem.fileName,
                 content);
         });
+
+        if (command.cleanup) {
+            command.cleanup.call(null, this, groups);
+        }
     }
 
     /** build table of content from chapterList and attach
@@ -107,11 +109,12 @@ class SiteScraper {
 
     htmlize(plaintext, chapterInfo) {
         let html = '';
-        html += `<h2>${chapterInfo.chapterName || chapterInfo.fileName}</h2>\n\n`;
+        html += `<h2 class="chapter">${chapterInfo.chapterName || chapterInfo.fileName}</h2>\n\n`;
         plaintext.split(/\n(\n)?/).forEach(str => {
             if (str && str.trim())
                 html += `<p>${str}</p>\n`;
         });
+        chapterInfo.htmlContent = html;
         return html;
     }
 
@@ -120,18 +123,19 @@ class SiteScraper {
         const toc = chapterInfo.toc;
 
         if (toc) {
-            tocHtml += "<div class='nav'><a class='left' href='./'>Index</a>"
+            tocHtml += `<div class='nav'>&nbsp;
+                <div class='left'><a href='./'>Index</a>&nbsp;&nbsp;</div>`;
             if (toc.prev) {
                 tocHtml += `
                     <a class='left' href="${toc.prev.fileName}">Prev ${toc.prev.chapterName}</a>
-                    <script>var prevFileName = '${toc.prev.fileName}';</script>    
+                    <script>window.prevFileName = '${toc.prev.fileName}';</script>    
                 `;
             }
 
             if (toc.next) {
                 tocHtml += `
                     <a class='right' href="${toc.next.fileName}">Next ${toc.next.chapterName}</a>
-                    <script>var nextFileName = '${toc.next.fileName}';</script>
+                    <script>window.nextFileName = '${toc.next.fileName}';</script>
                 `;
             }
             tocHtml += "</div>\n\n";
@@ -145,7 +149,7 @@ body {
     font-size: 20px;
     line-height: 40px;
     background-color: #365761;
-    color: #ccc;
+    color: #bbb;
 }
 h2 {
     font-weight: 300;
@@ -160,9 +164,9 @@ p {
 }
 .nav {
     clear: both;
-    text-align: center;
 }
 .nav a {
+    font-weight: 300;
     color: #7ba5b3;
 }
 .nav .left {
@@ -176,9 +180,16 @@ p {
 document.addEventListener('keydown', function(e) {
     switch (e.keyCode) {
     case 37:
-        if (prevFileName) document.location.href = prevFileName;
+        if (window.prevFileName) {
+            document.location.href = prevFileName;
+        }
+        break;
+
     case 39:
-        if (nextFileName) document.location.href = nextFileName;
+        if (window.nextFileName) {
+            document.location.href = nextFileName;
+        }
+        break;
     }
 })
 </script>        
