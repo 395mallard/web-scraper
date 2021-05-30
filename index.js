@@ -41,8 +41,8 @@ const main = async () => {
     // })());
 
     const bookId = "shouwuzuosuizhiwu";
-    await scraper.run("scrapeBook", bookId);
-//    await scraper.run("buildBook", bookId);
+//    await scraper.run("scrapeBook", bookId);
+    await scraper.run("buildBook", bookId, 'txt');
 
 
     ///// DON'T EDIT BELOW

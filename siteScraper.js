@@ -38,47 +38,61 @@ class SiteScraper {
         await this.siteConfig.runs[command].call(null, this, ...parameters);
     }
 
-    generateFileAggregation(dir, aggregator, sorter) {
-        const filePath = this.fsHelper.ls(dir);
+    /**
+     * take the raw fragments and take
+     * @param {*} fragments book.fragments that describes raw fragment id and name
+     * @param {*} aggregator map fragment to a chapter {id/fileName, chapterName}
+     * @param {*} fragmentSorter way to sort the list of fragments within a chapter
+     * @param {*} chapterSorter way to sort the list of chapter item
+     * @param {*} postProcessors an array of chapter processors
+     * @returns 
+     */
+    aggregateFragments(itemId, command) {
+        command.fragments = command.fragments || [];
+        command.postProcessors = command.postProcessors || [];
+        command.outDir = command.outDir || '_';
+        // chapterSorter, postProcessors
+
         const groups = {};
-        filePath.forEach((fileName) => {
-            const chapterName = aggregator.call(null, fileName);
-            if (!groups[chapterName])
-                groups[chapterName] = [];
-            groups[chapterName].push(fileName);
+        command.fragments.forEach((frag) => {
+            const groupInfo = command.aggregator.call(null, frag);
+            if (!groups[groupInfo.fileName])
+                groups[groupInfo.fileName] = {
+                    ...groupInfo,
+                    fragments: []
+                };
+            groups[groupInfo.fileName].fragments.push(frag.id);
         })
+        for (let fileName in groups) {
+            const g = groups[fileName];
+            g.fragments.sort(command.fragmentSorter);
 
+            let content = this.readCombineFile(itemId, '_fragment', g.fragments);
+            command.postProcessors.forEach(postProcessFunc => {
+                content = postProcessFunc.call(null, content);
+            });
 
-        for (let chapterName in groups) {
-            groups[chapterName].sort(sorter);
-            groups[chapterName] = groups[chapterName].map(v => `${dir}/${v}`);
+            this.fsHelper.writeContent(
+                `${itemId}/${command.outDir}`,
+                g.fileName,
+                content);
         }
-        return groups;
     }
 
-    combineFile(fileList, outputDir, outFile, converter) {
+    readCombineFile(itemId, dir, fileList) {
         const content = [];
-        fileList.forEach((fileItem) => {
-            let filePath = fileItem;
-            if (typeof fileItem !== "string") {
-                filePath = fileItem[0];
-                const fileName = fileItem[1];
-                if (fileName) {
-                    content.push(`${fileName}`);
-                }
-            }
-            let fileContent = this.fsHelper.readFile(filePath);
-            if (converter)
-                fileContent = converter.call(null, fileContent);
-
-            content.push(fileContent);
+        fileList.forEach((fileId) => {
+            let filePath = `${itemId}/${dir}/${fileId}`
+            const fileContent = this.fsHelper.readFile(filePath);
+            if (fileContent)
+                content.push(fileContent);
         })
-        this.fsHelper.writeContent(outputDir, outFile, content.join("\n"));
-        return `${outputDir}/${outFile}`;
+        return content.join("\n");
     }
 
     /**
-     * 
+     * saving this book/item's fragment content to fs
+     * e.g. `_stash/${siteId}/${itemId}/_fragment/${fragmentId}`
      */
     saveFragmentContentToFs(itemId, fragmentId, content) {
         const dirPath = `${itemId}/_fragment`;
@@ -225,7 +239,11 @@ class SiteScraper {
 
     // private helper method to single select one instance of an entity 
     _dbSelect(type, query) {
-        this.db[type].findOne(query);
+        if (typeof query === "string")
+            query = {
+                id: query
+            }
+        return this.db[type].findOne(query);
     }
 }
 

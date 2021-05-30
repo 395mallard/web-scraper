@@ -51,58 +51,71 @@ module.exports = (() => {
              * - combine chap.txt in right sequence to build one html
              * - convert the one html file to mobi
              */
-            buildFile: async (scraper, bookId) => {
+            buildBook: async (scraper, bookId, outputType) => {
                 const bookInfo = scraper._dbSelect('book', bookId);
                 if (!bookInfo.id)
                     throw new Error(`${bookId} is not a valid item`);
 
-                // 
-                const aggregation = scraper.generateFileAggregation(
-                    bookInfo.fragments,
-                    // if two files generate the same chapter one, they will combine
-                    (fragment) => {
-                        let [ch] = fragment.id.split("_");
-                        if (ch.length === 1)
-                            ch = `0${ch}`;
-                        return `ch${ch}`
-                        return {
-                            chapterName: fragment.name,
-                            fileName: `ch${ch}`
-                        }
-                    }
-                );
-
-                // _txtpart
-                const chapterTextList = [];
-                const chapterHtmlList = [];
-                for (const chapterName in aggregation) {
-                    const fileList = aggregation[chapterName];
-                    const chapterFile = scraper.combineFile(
-                        fileList,
-                        `${bookId}/_txtpart`,
-                        `${chapterName}.txt`,
-                    );
-
-                    const chapterHtmlFile = scraper.combineFile(
-                        fileList,
-                        `${bookId}/_htmlpart`,
-                        `${chapterName}.html`,
-                        (txtContent) => {
-                            return txtContent.replace(/\n/gm, "<br />\n");
-                        }
-                    );
-
-                    chapterTextList.push([`${chapterFile}`, `\n==============  ${chapterName}  ============\n`]);
-                    chapterHtmlList.push([`${chapterHtmlFile}`, `<h2>${chapterName}</h2>`]);
+                switch (outputType) {
+                    default:
                 }
 
-                // .txt
-                chapterTextList.sort();
-                scraper.combineFile(chapterTextList, `${bookId}/_full`, `${bookInfo.title}.txt`)
+                const aggregation = scraper.aggregateFragments(bookInfo.id, {
+                    fragments: bookInfo.fragments,
+                    outDir: '_fulltxt',
+                    // if two files generate the same chapter one, they will combine
+                    aggregator: (fragment) => {
+                        return {
+                            fileName: `${bookInfo.title}.txt`
+                        }
 
-                // .html
-                chapterHtmlList.sort();
-                scraper.combineFile(chapterHtmlList, `${bookId}/_full`, `${bookInfo.title}.html`)
+                        // let [ch] = fragment.id.split("_");
+                        // if (ch.length === 1)
+                        //     ch = `0${ch}`;
+                        // return {
+                        //     chapterName: fragment.name,
+                        //     fileName: `ch${ch}`
+                        // }
+                    },
+                    fragmentSorter: (fragmentA, fragmentB) => {
+                        const a = parseInt(fragmentA.replace('_', '.')) || fragmentA;
+                        const b = parseInt(fragmentB.replace('_', '.')) || fragmentB;
+                        return a < b;
+                    },
+                    postProcessors: [],
+                });
+
+                // // _txtpart
+                // const chapterTextList = [];
+                // const chapterHtmlList = [];
+                // for (const chapterName in aggregation) {
+                //     const fileList = aggregation[chapterName];
+                //     const chapterFile = scraper.combineFile(
+                //         fileList,
+                //         `${bookId}/_txtpart`,
+                //         `${chapterName}.txt`,
+                //     );
+
+                //     const chapterHtmlFile = scraper.combineFile(
+                //         fileList,
+                //         `${bookId}/_htmlpart`,
+                //         `${chapterName}.html`,
+                //         (txtContent) => {
+                //             return txtContent.replace(/\n/gm, "<br />\n");
+                //         }
+                //     );
+
+                //     chapterTextList.push([`${chapterFile}`, `\n==============  ${chapterName}  ============\n`]);
+                //     chapterHtmlList.push([`${chapterHtmlFile}`, `<h2>${chapterName}</h2>`]);
+                // }
+
+                // // .txt
+                // chapterTextList.sort();
+                // scraper.combineFile(chapterTextList, `${bookId}/_full`, `${bookInfo.title}.txt`)
+
+                // // .html
+                // chapterHtmlList.sort();
+                // scraper.combineFile(chapterHtmlList, `${bookId}/_full`, `${bookInfo.title}.html`)
             }
         },
         /**

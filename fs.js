@@ -28,7 +28,9 @@ class FsLayer {
      * return the text content of a filePath
      */
     readFile(filePath) {
-        return fs.readFileSync(`${this.siteDir}/${filePath}`, { encoding: 'utf8' });
+        const path = `${this.siteDir}/${filePath}`;
+        if (!fs.existsSync(path)) return undefined;
+        return fs.readFileSync(path, { encoding: 'utf8' });
     }
 
     /**
