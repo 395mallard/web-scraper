@@ -53,39 +53,152 @@ class SiteScraper {
         command.outDir = command.outDir || '_';
         // chapterSorter, postProcessors
 
-        const groups = {};
+        const groups = [];
         command.fragments.forEach((frag) => {
             const groupInfo = command.aggregator.call(null, frag);
-            if (!groups[groupInfo.fileName])
-                groups[groupInfo.fileName] = {
+            let groupItem = groups.find(el => el.fileName === groupInfo.fileName);
+            if (!groupItem) {
+                groupItem = {
                     ...groupInfo,
                     fragments: []
                 };
-            groups[groupInfo.fileName].fragments.push(frag.id);
+                groups.push(groupItem);
+            }
+            groupItem.fragments.push(frag);
         })
-        for (let fileName in groups) {
-            const g = groups[fileName];
-            g.fragments.sort(command.fragmentSorter);
 
-            let content = this.readCombineFile(itemId, '_fragment', g.fragments);
+        groups.sort(command.chapterSorter || ((a, b) => {
+            return a.fileName < b.fileName;
+        }));
+
+//console.log(groups);
+
+        groups.forEach(groupItem => {
+            groupItem.fragments.sort(command.fragmentSorter);
+
+            let content = this.readCombineFile(itemId, '_fragment', groupItem.fragments);
             command.postProcessors.forEach(postProcessFunc => {
-                content = postProcessFunc.call(null, content);
+                content = postProcessFunc.call(null, content, groupItem, groups);
             });
 
             this.fsHelper.writeContent(
                 `${itemId}/${command.outDir}`,
-                g.fileName,
+                groupItem.fileName,
                 content);
+        });
+    }
+
+    /** build table of content from chapterList and attach
+     * to each of chapterInfo for subsequent display
+     */
+    generateToc(_plainttext, chapterInfo, chapterList) {
+        const toc = {};
+        toc.currentIndex = chapterList.findIndex(c =>
+            c.fileName == chapterInfo.fileName);
+        toc.numChapter = chapterList.length;
+        if (toc.currentIndex < toc.numChapter - 1)
+            toc.next = chapterList[toc.currentIndex + 1];
+        if (toc.currentIndex > 0)
+            toc.prev = chapterList[toc.currentIndex - 1];
+
+        chapterInfo.toc = toc;
+        return _plainttext;
+    }
+
+    htmlize(plaintext, chapterInfo) {
+        let html = '';
+        html += `<h2>${chapterInfo.chapterName || chapterInfo.fileName}</h2>\n\n`;
+        plaintext.split(/\n(\n)?/).forEach(str => {
+            if (str && str.trim())
+                html += `<p>${str}</p>\n`;
+        });
+        return html;
+    }
+
+    buildHtmlPage(htmlBody, chapterInfo) {
+        let tocHtml = ``;
+        const toc = chapterInfo.toc;
+
+        if (toc) {
+            tocHtml += "<div class='nav'><a class='left' href='./'>Index</a>"
+            if (toc.prev) {
+                tocHtml += `
+                    <a class='left' href="${toc.prev.fileName}">Prev ${toc.prev.chapterName}</a>
+                    <script>var prevFileName = '${toc.prev.fileName}';</script>    
+                `;
+            }
+
+            if (toc.next) {
+                tocHtml += `
+                    <a class='right' href="${toc.next.fileName}">Next ${toc.next.chapterName}</a>
+                    <script>var nextFileName = '${toc.next.fileName}';</script>
+                `;
+            }
+            tocHtml += "</div>\n\n";
         }
+        return `<html>
+<head>
+<style>
+body {
+    padding: 10px 5px;
+    font-family: "PingFang SC Regular","PingFang SC",PingFang,"Droid Sans","Droid Sans Fallback",Arial,"Helvetica Neue",Roboto,"Heiti SC",sans-self;
+    font-size: 20px;
+    line-height: 40px;
+    background-color: #365761;
+    color: #ccc;
+}
+h2 {
+    font-weight: 300;
+}
+p {
+    font-weight: 300;
+    padding: 0px;
+    text-indent: 2em;
+    margin: 0 0 5px;
+    margin-inline-start: 0px;
+    margin-inline-end: 0px;
+}
+.nav {
+    clear: both;
+    text-align: center;
+}
+.nav a {
+    color: #7ba5b3;
+}
+.nav .left {
+    float: left;
+}
+.nav .right {
+    float: right;
+}
+</style>
+<script>
+document.addEventListener('keydown', function(e) {
+    switch (e.keyCode) {
+    case 37:
+        if (prevFileName) document.location.href = prevFileName;
+    case 39:
+        if (nextFileName) document.location.href = nextFileName;
+    }
+})
+</script>        
+</head>
+<body>
+${tocHtml}
+${htmlBody}
+</body>
+</html>`;
     }
 
     readCombineFile(itemId, dir, fileList) {
         const content = [];
-        fileList.forEach((fileId) => {
-            let filePath = `${itemId}/${dir}/${fileId}`
+        fileList.forEach((f) => {
+            let filePath = `${itemId}/${dir}/${f.id}`
             const fileContent = this.fsHelper.readFile(filePath);
-            if (fileContent)
+
+            if (fileContent) {
                 content.push(fileContent);
+            }
         })
         return content.join("\n");
     }
